@@ -37,6 +37,7 @@
 #include "bnfa_search.h"
 #include "acsmx.h"
 #include "acsmx2.h"
+#include "acsmx3.h"
 #include "sfksearch.h"
 #include "mpse.h"
 #include "snort_debug.h"
@@ -126,6 +127,9 @@ void * mpseNew( int method, int use_global_counter_flag,
         case MPSE_LOWMEM_Q:
             p->obj = KTrieNew(1,userfree, optiontreefree, neg_list_free);
             break;
+        case MPSE_AC_PARALLEL:
+        	p->obj = acsmNew3(userfree, optiontreefree, neg_list_free);
+            break;
         default:
             /* p is free'd below if no case */
             break;
@@ -204,6 +208,9 @@ void * mpseNewWithSnortConfig( struct _SnortConfig *sc,
             p->obj=IntelPmNew(sc, userfree, optiontreefree, neg_list_free);
             break;
 #endif
+		case MPSE_AC_PARALLEL:
+        	p->obj = acsmNew3(userfree, optiontreefree, neg_list_free);
+            break;
         default:
             /* p is free'd below if no case */
             break;
@@ -294,7 +301,11 @@ void   mpseFree( void * pvoid )
             free(p);
             break;
 #endif
-
+		case MPSE_AC_PARALLEL:
+            if (p->obj)
+                acsmFree3((ACSM_STRUCT3 *)p->obj);
+            free(p);
+            return;
         default:
             return;
     }
@@ -329,6 +340,9 @@ int  mpseAddPattern ( void * pvoid, void * P, int m,
      case MPSE_LOWMEM_Q:
        return KTrieAddPattern( (KTRIE_STRUCT *)p->obj, (unsigned char *)P, m,
                                 noCase, negative, ID );
+     case MPSE_AC_PARALLEL:
+       return acsmAddPattern3( (ACSM_STRUCT3*)p->obj, (unsigned char *)P, m,
+              noCase, offset, depth, negative, ID, IID );
      default:
        return -1;
    }
@@ -369,6 +383,9 @@ int  mpseAddPatternWithSnortConfig ( SnortConfig *sc, void * pvoid, void * P, in
        return IntelPmAddPattern(sc, (IntelPm *)p->obj, (unsigned char *)P, m,
                noCase, negative, ID, IID);
 #endif
+	case MPSE_AC_PARALLEL:
+       return acsmAddPattern3( (ACSM_STRUCT3*)p->obj, (unsigned char *)P, m,
+              noCase, offset, depth, negative, ID, IID );
      default:
        return -1;
    }
@@ -415,7 +432,9 @@ int  mpsePrepPatterns  ( void * pvoid,
      case MPSE_LOWMEM:
      case MPSE_LOWMEM_Q:
        return KTrieCompile( (KTRIE_STRUCT *)p->obj, build_tree, neg_list_func );
-
+	 case MPSE_AC_PARALLEL:
+       retv = acsmCompile3( (ACSM_STRUCT3*) p->obj, build_tree, neg_list_func );
+	   break;
      default:
        retv = 1;
      break;
@@ -459,7 +478,11 @@ int  mpsePrepPatternsWithSnortConf  ( struct _SnortConfig *sc, void * pvoid,
      case MPSE_INTEL_CPM:
        return IntelPmFinishGroup(sc, (IntelPm *)p->obj, build_tree, neg_list_func);
 #endif
-
+	
+	 case MPSE_AC_PARALLEL:
+       retv = acsmCompileWithSnortConf3( sc, (ACSM_STRUCT3*) p->obj, build_tree, neg_list_func );
+     break;
+     
      default:
        retv = 1;
      break;
@@ -541,6 +564,9 @@ int mpsePrintSummary(int method)
 
             }
             break;
+		case MPSE_AC_PARALLEL:
+            acsmPrintSummaryInfo3();
+            break;
         default:
             break;
     }
@@ -578,6 +604,9 @@ int mpsePrintSummaryWithSnortConfig(SnortConfig *sc, int method)
                         (x > 1.e+6) ? "MBytes" : "KBytes" );
 
             }
+            break;
+		case MPSE_AC_PARALLEL:
+            acsmPrintSummaryInfo3();
             break;
         default:
             break;
@@ -651,7 +680,10 @@ int mpseSearch( void *pvoid, const unsigned char * T, int n,
         PREPROC_PROFILE_END(mpsePerfStats);
         return ret;
 #endif
-
+	 case MPSE_AC_PARALLEL:
+       ret = acsmSearch3( (ACSM_STRUCT3*) p->obj, (unsigned char *)T, n, action, data, current_state );
+       PREPROC_PROFILE_END(mpsePerfStats);
+       return ret;
      default:
        PREPROC_PROFILE_END(mpsePerfStats);
        return 1;
@@ -729,6 +761,8 @@ int mpseGetPatternCount(void *pvoid)
         case MPSE_INTEL_CPM:
             return IntelGetPatternCount((IntelPm *)p->obj);
 #endif
+		case MPSE_AC_PARALLEL:
+            return acsmPatternCount3((ACSM_STRUCT3*)p->obj);
     }
     return 0;
 }

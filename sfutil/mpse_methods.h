@@ -44,6 +44,8 @@
 #define MPSE_INTEL_CPM 14
 #endif /* INTEL_SOFT_CPM */
 
+#define MPSE_AC_PARALLEL 15
+
 typedef enum {
     MPSE_PATTERN_CASE,
     MPSE_PATTERN_NOCASE
