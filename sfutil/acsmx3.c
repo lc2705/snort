@@ -875,7 +875,7 @@ acsmSearch3 (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     	pthread_mutex_unlock(&search_mutex_array[i]);
     }
     
-	return 0;  //o or 1
+	return 0;  //o or 1 ? 
 }
 
 
@@ -887,7 +887,10 @@ acsmFree3 (ACSM_STRUCT3 * acsm)
 {
     int i;
     ACSM_PATTERN * mlist, *ilist;
-    for (i = 0; i < acsm->acsmMaxStates; i++)
+    
+    acsmThreadDestroy();
+    
+	for (i = 0; i < acsm->acsmMaxStates; i++)
     {
         mlist = acsm->acsmStateTable[i].MatchList;
         while (mlist)
