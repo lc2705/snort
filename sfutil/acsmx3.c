@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h> 
+#include <lpthread.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -33,6 +35,7 @@ static int max_memory = 0;
 #endif
 
 #define THREAD_NUM 8
+#define MAX_PATTERN_LEN 20
 
 /*
 *
@@ -216,6 +219,8 @@ pthread_mutex_t * 	search_mutex_array;
 QUEUE * 			search_queue_array;
 int					StopSearch;
 int					thread_num = THREAD_NUM;
+static unsigned char Tc[THREAD_NUM][8*1024];  //64K
+
 
 static void
 acsmThreadCreate()
@@ -234,6 +239,7 @@ acsmThreadCreate()
 		
 		pthread_create(&search_thread_array,NULL,_multiThread,(void *)(intptr_t)i); 
 	}
+	StopSearch = 0;
 }
 
 static void 
@@ -243,12 +249,16 @@ acsmThreadDestroy()
     int i,err;
     for(i = 0;i < thread_num;i++)
     {
+    	pthread_cond_signal(&search_cond_array[i]); 
         err = pthread_join(thread_array[i],NULL);
         if(err != 0)
         {
             printf("can not join with thread %d:%s\n", i,strerror(err));
         }
-        queue_free(&search_queue_array[i]);
+        while (queue_count(&search_queue_array[i]))
+		{
+      		AC_FREE(queue_remove (&search_queue_array[i]));
+    	}
 		pthread_mutex_destroy(&search_mutex_array[i]);
 		pthread_cond_destroy(&search_cond_array[i]);
     }
@@ -267,7 +277,6 @@ _acsmSearch (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
             int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
             void *data, int* current_state )
 {   
-
 	int state = 0;
     ACSM_PATTERN * mlist;
     unsigned char *Tend;
@@ -276,9 +285,7 @@ _acsmSearch (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     unsigned char *T;
     int index;
 
-    /* Case conversion */
-    ConvertCaseEx (Tc, Tx, n);
-    T = Tc;
+    T = Tx;
     Tend = T + n;
 
     if ( !current_state )
@@ -323,9 +330,7 @@ _acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     unsigned char *T;
     int index;
 
-    /* Case conversion */
-    ConvertCaseEx (Tc, Tx, n);
-    T = Tc;
+    T = Tx;
     Tend = T + n;
 
     if ( !current_state )
@@ -363,7 +368,48 @@ int
 _multiThread(void * args)
 {
 	int rank = (int)(intptr_t)args;
+	int state;
+	int len;        //fragments length
+	int index;      //fragment begin position in each packet
+//	int nfound;
+	TASK *t = NULL;
+	QUEUE *q = search_queue_array[rank];
+	pthread_mutex_t mutex = search_mutex_array[rank];
+	pthread_cond_t cond = search_cond_array[rank];
 	
+	while(1)
+	{
+		pthread_mutex_lock(&mutex);
+		while(!queue_count(q) && !StopSearch) 
+		{
+			pthread_cond_wait(&cond,&mutex);
+		}
+		if(!queue_count(q) && StopSearch)
+		{
+			pthread_mutex_unlock(&mutex);
+			break;
+		}
+		t = queue_remove(q);
+		pthread_mutex_unlock(&mutex);
+		
+		state = *(t->current_state);
+		len = t->n / thread_num;
+		index = len * rank;
+		if(rank == thread_num - 1) //thread processing the last fragment
+			len = t->n - index;
+		
+		ConvertCaseEx(Tc[rank],t->T + index,len);	//case conversion
+		_acsmSearch(t->acsm,Tc[rank],len,t->Match,t->data,state);
+		if(rank < thread_num - 1)
+		{
+			int ret = 0;
+			index = index + len;
+			ConvertCaseEx(Tc[rank],t->T + index,MAX_PATTERN_LEN - 1);
+			_acsmSearchWithDepthcompare(t->acsm,Tc[rank],MAX_PATTERN_LEN - 1,t->Match,t->data,state);
+		}
+		*(t->current_state) = state;	
+	}
+	return 0;
 }
 
 /*
@@ -804,8 +850,6 @@ acsmCompileWithSnortConf3 (struct _SnortConfig *sc, ACSM_STRUCT3 * acsm,
     return 0;
 }
 
-static unsigned char Tc[64*1024];
-
 /*
 *   Search Text or Binary Data for Pattern matches
 *  	Add New Tasks for Threads 
@@ -833,46 +877,6 @@ acsmSearch3 (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     }
     
 	return 0;  //o or 1
-/*	
-	int state = 0;
-    ACSM_PATTERN * mlist;
-    unsigned char *Tend;
-    ACSM_STATETABLE3 * StateTable = acsm->acsmStateTable;
-    int nfound = 0;
-    unsigned char *T;
-    int index;
-
-    /* Case conversion *
-    ConvertCaseEx (Tc, Tx, n);
-    T = Tc;
-    Tend = T + n;
-
-    if ( !current_state )
-    {
-        return 0;
-    }
-
-    state = *current_state;
-
-    for (; T < Tend; T++)
-    {
-        state = StateTable[state].NextState[*T];
-
-        if( StateTable[state].MatchList != NULL )
-        {
-            mlist = StateTable[state].MatchList;
-            index = T - mlist->n + 1 - Tc;
-            nfound++;
-            if (Match (mlist->udata->id, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
-            {
-                *current_state = state;
-                return nfound;
-            }
-        }
-    }
-    *current_state = state;
-    return nfound;
-*/
 }
 
 
