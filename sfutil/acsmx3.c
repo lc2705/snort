@@ -273,19 +273,17 @@ acsmThreadDestroy()
 *  	Add New Tasks for Threads 
 */
 int
-_acsmSearch (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
+_acsmSearch (ACSM_STRUCT3 * acsm, int rank, int index, int n,
             int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
             void *data, int* current_state )
 {   
 	int state = 0;
     ACSM_PATTERN * mlist;
-    unsigned char *Tend;
+    unsigned char *Tend,*T;
     ACSM_STATETABLE3 * StateTable = acsm->acsmStateTable;
     int nfound = 0;
-    unsigned char *T;
-    int index;
 
-    T = Tx;
+    T = Tc[rank];
     Tend = T + n;
 
     if ( !current_state )
@@ -302,7 +300,7 @@ _acsmSearch (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
         if( StateTable[state].MatchList != NULL )
         {
             mlist = StateTable[state].MatchList;
-            index = T - mlist->n + 1 - Tc;
+            index = index + T - mlist->n + 1 - Tc;
             nfound++;
             if (Match (mlist->udata->id, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
             {
@@ -317,20 +315,18 @@ _acsmSearch (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
 }
 
 int
-_acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
+_acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, int rank,int index, int n,
             int (*Match)(void * id, void *tree, int index, void *data, void *neg_list),
             void *data, int* current_state )
 {   
 
-	int state = 0;
+	int state = 0,step = 0;
     ACSM_PATTERN * mlist;
-    unsigned char *Tend;
+    unsigned char *Tend,*T;
     ACSM_STATETABLE3 * StateTable = acsm->acsmStateTable;
     int nfound = 0;
-    unsigned char *T;
-    int index;
-
-    T = Tx;
+   
+    T = Tc[rank];
     Tend = T + n;
 
     if ( !current_state )
@@ -342,12 +338,16 @@ _acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
 
     for (; T < Tend; T++)
     {
+    	step++;
         state = StateTable[state].NextState[*T];
+        
+		if(step >= StateTable[state].Depth)
+			return nfound;
 
         if( StateTable[state].MatchList != NULL )
         {
             mlist = StateTable[state].MatchList;
-            index = T - mlist->n + 1 - Tc;
+            index =index + T - mlist->n + 1 - Tc;
             nfound++;
             if (Match (mlist->udata->id, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
             {
@@ -358,7 +358,6 @@ _acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     }
     *current_state = state;
     return nfound;
-
 }
 
 /*
@@ -399,13 +398,13 @@ _multiThread(void * args)
 			len = t->n - index;
 		
 		ConvertCaseEx(Tc[rank],t->T + index,len);	//case conversion
-		_acsmSearch(t->acsm,Tc[rank],len,t->Match,t->data,state);
+		_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
 		if(rank < thread_num - 1)
 		{
 			int ret = 0;
 			index = index + len;
 			ConvertCaseEx(Tc[rank],t->T + index,MAX_PATTERN_LEN - 1);
-			_acsmSearchWithDepthcompare(t->acsm,Tc[rank],MAX_PATTERN_LEN - 1,t->Match,t->data,state);
+			_acsmSearchWithDepthcompare(t->acsm,rank,index,MAX_PATTERN_LEN - 1,t->Match,t->data,state);
 		}
 		*(t->current_state) = state;	
 	}
