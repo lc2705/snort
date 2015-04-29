@@ -99,7 +99,7 @@ libsfutil_a_LIBADD =
 am__libsfutil_a_SOURCES_DIST = sfghash.c sfghash.h sfhashfcn.c \
 	sfhashfcn.h sflsq.c sflsq.h sfmemcap.c sfmemcap.h sfthd.c \
 	sfthd.h sfxhash.c sfxhash.h ipobj.c ipobj.h getopt_long.c \
-	getopt.h getopt1.h acsmx.c acsmx.h acsmx2.c acsmx2.h \
+	getopt.h getopt1.h acsmx.c acsmx.h acsmx2.c acsmx2.h acsmx3.c acsmx3.h\
 	sfksearch.c sfksearch.h bnfa_search.c bnfa_search.h mpse.c \
 	mpse.h bitop.h bitop_funcs.h util_math.c util_math.h \
 	util_net.c util_net.h util_str.c util_str.h util_utf.c \
@@ -124,7 +124,7 @@ am__libsfutil_a_SOURCES_DIST = sfghash.c sfghash.h sfhashfcn.c \
 am_libsfutil_a_OBJECTS = sfghash.$(OBJEXT) sfhashfcn.$(OBJEXT) \
 	sflsq.$(OBJEXT) sfmemcap.$(OBJEXT) sfthd.$(OBJEXT) \
 	sfxhash.$(OBJEXT) ipobj.$(OBJEXT) getopt_long.$(OBJEXT) \
-	acsmx.$(OBJEXT) acsmx2.$(OBJEXT) sfksearch.$(OBJEXT) \
+	acsmx.$(OBJEXT) acsmx2.$(OBJEXT) acsm3.$(OBJEXT) sfksearch.$(OBJEXT) \
 	bnfa_search.$(OBJEXT) mpse.$(OBJEXT) util_math.$(OBJEXT) \
 	util_net.$(OBJEXT) util_str.$(OBJEXT) util_utf.$(OBJEXT) \
 	util_jsnorm.$(OBJEXT) util_unfold.$(OBJEXT) asn1.$(OBJEXT) \

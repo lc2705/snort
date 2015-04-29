@@ -978,6 +978,11 @@ int fpSetDetectSearchMethod(FastPatternConfig *fp, char *method)
        LogMessage("   Search-Method = Intel CPM\n");
     }
 #endif
+	else if( !strcasecmp(method,"ac-parallel") )
+    {
+       fp->search_method = MPSE_AC_PARALLEL;
+       LogMessage("   Search-Method = AC-PARALLEL\n");
+    }
     else
     {
        return -1;

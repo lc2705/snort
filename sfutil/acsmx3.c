@@ -14,7 +14,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h> 
-#include <lpthread.h>
+#include <pthread.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -111,7 +111,7 @@ queue_add (QUEUE * s, void *data)
     {
       q = (QNODE *) AC_MALLOC (sizeof (QNODE));
       MEMASSERT (q, "queue_add");
-      q->state = state;
+      q->data = data;
       q->next = 0;
       s->tail->next = q;
       s->tail = q;
@@ -227,6 +227,7 @@ int					StopSearch;
 int					thread_num = THREAD_NUM;
 static unsigned char Tc[THREAD_NUM][8*1024];  //64K
 
+int _multiThread(void * args);
 
 static void
 acsmThreadCreate()
@@ -246,7 +247,7 @@ acsmThreadCreate()
 	{
 		pthread_mutex_init(&search_mutex_array[i],NULL);
 		pthread_cond_init(&search_cond_array[i],NULL);		
-		pthread_create(&search_thread_array,NULL,_multiThread,(void *)(intptr_t)i); 
+		pthread_create(&search_thread_array[rank],NULL,_multiThread,(void *)(intptr_t)i); 
 	}
 }
 
@@ -258,7 +259,7 @@ acsmThreadDestroy()
     for(i = 0;i < thread_num;i++)
     {
     	pthread_cond_signal(&search_cond_array[i]); 
-        err = pthread_join(thread_array[i],NULL);
+        err = pthread_join(search_thread_array[i],NULL);
         if(err != 0)
         {
             printf("can not join with thread %d:%s\n", i,strerror(err));
@@ -304,7 +305,7 @@ _acsmSearch (ACSM_STRUCT3 * acsm, int rank, int index, int n,
         if( StateTable[state].MatchList != NULL )
         {
             mlist = StateTable[state].MatchList;
-            index = index + T - mlist->n + 1 - Tc;
+            index = index + T - mlist->n + 1 - Tc[rank];
             nfound++;
             if (Match (mlist->udata->id, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
             {
@@ -351,7 +352,7 @@ _acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, int rank,int index, int n,
         if( StateTable[state].MatchList != NULL )
         {
             mlist = StateTable[state].MatchList;
-            index =index + T - mlist->n + 1 - Tc;
+            index = index + T - mlist->n + 1 - Tc[rank];
             nfound++;
             if (Match (mlist->udata->id, mlist->rule_option_tree, index, data, mlist->neg_list) > 0)
             {
@@ -858,6 +859,8 @@ acsmCompileWithSnortConf3 (struct _SnortConfig *sc, ACSM_STRUCT3 * acsm,
         acsmBuildMatchStateTreesWithSnortConf(sc, acsm, build_tree, neg_list_func);
     }
 
+	acsmThreadCreate();
+
     return 0;
 }
 
@@ -883,7 +886,7 @@ acsmSearch3 (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     {
     	pthread_mutex_lock(&search_mutex_array[i]);
     	search_added_array[i] = 1;
-    	pthread_cond_signal(search_cond_array[i]);
+    	pthread_cond_signal(&search_cond_array[i]);
     	pthread_mutex_unlock(&search_mutex_array[i]);
     }
     
