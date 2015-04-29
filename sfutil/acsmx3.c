@@ -208,7 +208,7 @@ typedef struct
 	int * current_state;
 
 }TASK;
-
+TASK				search_task;
 
 /*
 *   Search Thread 
@@ -216,7 +216,13 @@ typedef struct
 pthread_t * 		search_thread_array;
 pthread_cond_t * 	search_cond_array;
 pthread_mutex_t * 	search_mutex_array;
-QUEUE * 			search_queue_array;
+unsigned char *		search_added_array;
+
+pthread_cond_t      packet_cond;
+pthread_mutex_t     packet_mutex;
+unsigned int        packet_finished;
+pthread_barrier_t   thread_barrier;
+
 int					StopSearch;
 int					thread_num = THREAD_NUM;
 static unsigned char Tc[THREAD_NUM][8*1024];  //64K
@@ -229,17 +235,19 @@ acsmThreadCreate()
 	search_thread_array = calloc(thread_num,sizeof(pthread_t));
 	search_mutex_array = calloc(thread_num,sizeof(pthread_mutex_t));
 	search_cond_array = calloc(thread_num,sizeof(pthread_cond_t));
-	search_queue_array = calloc(thread_num,sizeof(QUEUE));
-
+	search_added_array = calloc(thread_num,sizeof(unsigned char));
+	StopSearch = 0;
+	
+	packet_finished = 0;
+	pthread_mutex_init(&packet_mutex,NULL);
+	pthread_cond_init(&packet_cond,NULL);
+	pthread_barrier_init(&thread_barrier,NULL,thread_num); 
 	for(i = 0;i < thread_num;i++)
 	{
 		pthread_mutex_init(&search_mutex_array[i],NULL);
-		pthread_cond_init(&search_cond_array[i],NULL);
-		queue_init(&search_queue_array[i]);
-		
+		pthread_cond_init(&search_cond_array[i],NULL);		
 		pthread_create(&search_thread_array,NULL,_multiThread,(void *)(intptr_t)i); 
 	}
-	StopSearch = 0;
 }
 
 static void 
@@ -255,17 +263,13 @@ acsmThreadDestroy()
         {
             printf("can not join with thread %d:%s\n", i,strerror(err));
         }
-        while (queue_count(&search_queue_array[i]))
-		{
-      		AC_FREE(queue_remove (&search_queue_array[i]));
-    	}
 		pthread_mutex_destroy(&search_mutex_array[i]);
 		pthread_cond_destroy(&search_cond_array[i]);
     }
 	free(search_mutex_array);
 	free(search_cond_array);
 	free(search_thread_array);
-	free(search_queue_array);
+	free(search_added_array);
 }
 
 /*
@@ -371,42 +375,50 @@ _multiThread(void * args)
 	int len;        //fragments length
 	int index;      //fragment begin position in each packet
 //	int nfound;
-	TASK *t = NULL;
-	QUEUE *q = search_queue_array[rank];
+	TASK *t = &search_task;
 	pthread_mutex_t mutex = search_mutex_array[rank];
 	pthread_cond_t cond = search_cond_array[rank];
 	
 	while(1)
 	{
 		pthread_mutex_lock(&mutex);
-		while(!queue_count(q) && !StopSearch) 
+		while(!search_added_array[rank] && !StopSearch) 
 		{
 			pthread_cond_wait(&cond,&mutex);
 		}
-		if(!queue_count(q) && StopSearch)
+		if(!search_added_array[rank] && StopSearch)
 		{
 			pthread_mutex_unlock(&mutex);
 			break;
 		}
-		t = queue_remove(q);
+		search_added_array[rank] = 0;
 		pthread_mutex_unlock(&mutex);
 		
 		state = *(t->current_state);
 		len = t->n / thread_num;
 		index = len * rank;
-		if(rank == thread_num - 1) //thread processing the last fragment
-			len = t->n - index;
-		
-		ConvertCaseEx(Tc[rank],t->T + index,len);	//case conversion
-		_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
 		if(rank < thread_num - 1)
 		{
-			int ret = 0;
-			index = index + len;
-			ConvertCaseEx(Tc[rank],t->T + index,MAX_PATTERN_LEN - 1);
-			_acsmSearchWithDepthcompare(t->acsm,rank,index,MAX_PATTERN_LEN - 1,t->Match,t->data,state);
+			ConvertCaseEx(Tc[rank],t->T + index,len + MAX_PATTERN_LEN - 1);	//case conversion
+			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
+			_acsmSearchWithDepthcompare(t->acsm,rank,index + len,MAX_PATTERN_LEN - 1,t->Match,t->data,state);
 		}
-		*(t->current_state) = state;	
+		else
+		{
+			len = t->n - index;
+			ConvertCaseEx(Tc[rank],t->T + index,len);	//case conversion
+			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
+		}
+		*(t->current_state) = state;
+		
+		pthread_barrier_wait(&thread_barrier);
+		if(rank == 0)
+		{
+			pthread_mutex_lock(&packet_mutex);
+			packet_finished = 1;
+			pthread_mutex_unlock(&packet_mutex);
+			pthread_cond_signal(&packet_cond);
+		}	
 	}
 	return 0;
 }
@@ -859,7 +871,7 @@ acsmSearch3 (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
             void *data, int* current_state )
 {
 	int i;
-    TASK *t = (TASK*)AC_MALLOC(sizeof(TASK));
+    TASK *t = &search_task;
     t->acsm = acsm;
     t->T = Tx;
     t->n = n;
@@ -870,10 +882,16 @@ acsmSearch3 (ACSM_STRUCT3 * acsm, unsigned char *Tx, int n,
     for(i = 0; i < thread_num;i++)
     {
     	pthread_mutex_lock(&search_mutex_array[i]);
-    	queue_add(&search_queue_array[i],(void *)t);
+    	search_added_array[i] = 1;
     	pthread_cond_signal(search_cond_array[i]);
     	pthread_mutex_unlock(&search_mutex_array[i]);
     }
+    
+    pthread_mutex_lock(&packet_mutex);
+   	while(!packet_finished)
+   		pthread_cond_wait(&packet_cond,&packet_mutex);
+	packet_finished = 0;
+   	pthread_mutex_unlock(&packet_mutex);
     
 	return 0;  //o or 1 ? 
 }
