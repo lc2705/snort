@@ -75,6 +75,8 @@
 #include "dynamic-plugins/sp_preprocopt.h"
 #include "dynamic-plugins/sf_dynamic_define.h"
 
+#include "sfutil/acsmx3.h" 
+
 /*
  *  Content flag values
  */
@@ -3105,6 +3107,10 @@ int fpCreateFastPacketDetection(SnortConfig *sc)
         IntelPmStartInstance();
 #endif
 
+	/* create detection threads for parallel ac*/
+	if (fp->search_method == MPSE_AC_PARALLEL)
+		acsm3ThreadCreate();
+
     /* Use PortObjects to create PORT_GROUPs */
     if (fpDetectGetDebugPrintRuleGroupBuildDetails(fp))
         LogMessage("Creating Port Groups....\n");
@@ -3190,7 +3196,10 @@ void fpDeleteFastPacketDetection(SnortConfig *sc)
 {
     if (sc == NULL)
         return;
-
+	/*destroy detection threads*/
+	if(sc->fast_pattern_config->search_method == MPSE_AC_PARALLEL)
+		acsm3ThreadDestroy();
+	
     /* Cleanup the detection option tree */
     DetectionHashTableFree(sc->detection_option_hash_table);
     DetectionTreeHashTableFree(sc->detection_option_tree_hash_table);

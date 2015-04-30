@@ -95,4 +95,7 @@ int acsmPrintDetailInfo3(ACSM_STRUCT3 *);
 
 int acsmPrintSummaryInfo3(void);
 
+void acsm3ThreadCreate(void);
+void acsm3ThreadDestroy(void);
+
 #endif

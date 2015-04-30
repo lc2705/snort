@@ -34,8 +34,8 @@
 static int max_memory = 0;
 #endif
 
-#define THREAD_NUM 8
-#define MAX_PATTERN_LEN 20
+#define THREAD_NUM 2
+#define MAX_PATTERN_LEN 200
 
 /*
 *
@@ -227,10 +227,10 @@ int					StopSearch;
 int					thread_num = THREAD_NUM;
 static unsigned char Tc[THREAD_NUM][8*1024];  //64K
 
-int _multiThread(void * args);
+static void*  _multiThread(void * args);
 
-static void
-acsmThreadCreate()
+void
+acsm3ThreadCreate()
 {
 	int i;
 	search_thread_array = calloc(thread_num,sizeof(pthread_t));
@@ -247,18 +247,21 @@ acsmThreadCreate()
 	{
 		pthread_mutex_init(&search_mutex_array[i],NULL);
 		pthread_cond_init(&search_cond_array[i],NULL);		
-		pthread_create(&search_thread_array[rank],NULL,_multiThread,(void *)(intptr_t)i); 
+		pthread_create(&search_thread_array[i],NULL,_multiThread,(void *)(intptr_t)i); 
 	}
 }
 
-static void 
-acsmThreadDestroy()
+void 
+acsm3ThreadDestroy()
 {
 	StopSearch = 1;
+
     int i,err;
     for(i = 0;i < thread_num;i++)
     {
-    	pthread_cond_signal(&search_cond_array[i]); 
+        pthread_mutex_lock(&search_mutex_array[i]);
+    	pthread_cond_signal(&search_cond_array[i]);
+        pthread_mutex_unlock(&search_mutex_array[i]);
         err = pthread_join(search_thread_array[i],NULL);
         if(err != 0)
         {
@@ -368,7 +371,7 @@ _acsmSearchWithDepthcompare (ACSM_STRUCT3 * acsm, int rank,int index, int n,
 /*
 *  callback function
 */ 
-int
+static void*
 _multiThread(void * args)
 {
 	int rank = (int)(intptr_t)args;
@@ -377,23 +380,31 @@ _multiThread(void * args)
 	int index;      //fragment begin position in each packet
 //	int nfound;
 	TASK *t = &search_task;
-	pthread_mutex_t mutex = search_mutex_array[rank];
-	pthread_cond_t cond = search_cond_array[rank];
+	pthread_mutex_t *mutex = &search_mutex_array[rank];
+	pthread_cond_t *cond = &search_cond_array[rank];
 	
 	while(1)
 	{
-		pthread_mutex_lock(&mutex);
+		pthread_mutex_lock(mutex);
 		while(!search_added_array[rank] && !StopSearch) 
 		{
-			pthread_cond_wait(&cond,&mutex);
+            printf("rank %d !search added \n",rank);
+       /*     if(StopSearch)
+            {
+                pthread_mutex_unlock(mutex);
+                return NULL;
+            }
+            */
+            printf("rank %d cond wait \n",rank);
+			pthread_cond_wait(cond,mutex);
 		}
-		if(!search_added_array[rank] && StopSearch)
-		{
-			pthread_mutex_unlock(&mutex);
-			break;
-		}
+        if(!search_added_array[rank] && StopSearch)
+        {
+            pthread_mutex_unlock(mutex);
+            break;
+        }
 		search_added_array[rank] = 0;
-		pthread_mutex_unlock(&mutex);
+		pthread_mutex_unlock(mutex);
 		
 		state = *(t->current_state);
 		len = t->n / thread_num;
@@ -401,14 +412,14 @@ _multiThread(void * args)
 		if(rank < thread_num - 1)
 		{
 			ConvertCaseEx(Tc[rank],t->T + index,len + MAX_PATTERN_LEN - 1);	//case conversion
-			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
-			_acsmSearchWithDepthcompare(t->acsm,rank,index + len,MAX_PATTERN_LEN - 1,t->Match,t->data,state);
+			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,&state);
+			_acsmSearchWithDepthcompare(t->acsm,rank,index + len,MAX_PATTERN_LEN - 1,t->Match,t->data,&state);
 		}
 		else
 		{
 			len = t->n - index;
 			ConvertCaseEx(Tc[rank],t->T + index,len);	//case conversion
-			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,state);
+			_acsmSearch(t->acsm,rank,index,len,t->Match,t->data,&state);
 		}
 		*(t->current_state) = state;
 		
@@ -421,7 +432,7 @@ _multiThread(void * args)
 			pthread_cond_signal(&packet_cond);
 		}	
 	}
-	return 0;
+//	return NULL;
 }
 
 /*
@@ -838,8 +849,6 @@ acsmCompile3 (ACSM_STRUCT3 * acsm,
     {
         acsmBuildMatchStateTrees(acsm, build_tree, neg_list_func);
     }
-    
-    acsmThreadCreate();
 
     return 0;
 }
@@ -858,8 +867,6 @@ acsmCompileWithSnortConf3 (struct _SnortConfig *sc, ACSM_STRUCT3 * acsm,
     {
         acsmBuildMatchStateTreesWithSnortConf(sc, acsm, build_tree, neg_list_func);
     }
-
-	acsmThreadCreate();
 
     return 0;
 }
@@ -909,7 +916,6 @@ acsmFree3 (ACSM_STRUCT3 * acsm)
     int i;
     ACSM_PATTERN * mlist, *ilist;
     
-    acsmThreadDestroy();
     
 	for (i = 0; i < acsm->acsmMaxStates; i++)
     {
