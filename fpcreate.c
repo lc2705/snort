@@ -3196,10 +3196,14 @@ void fpDeleteFastPacketDetection(SnortConfig *sc)
 {
     if (sc == NULL)
         return;
-	/*destroy detection threads*/
-	if(sc->fast_pattern_config->search_method == MPSE_AC_PARALLEL)
-		acsm3ThreadDestroy();
 	
+    /*destroy detection threads*/
+	if(sc->fast_pattern_config != NULL)
+    {
+        if(sc->fast_pattern_config->search_method == MPSE_AC_PARALLEL)
+		    acsm3ThreadDestroy();
+    }
+
     /* Cleanup the detection option tree */
     DetectionHashTableFree(sc->detection_option_hash_table);
     DetectionTreeHashTableFree(sc->detection_option_tree_hash_table);

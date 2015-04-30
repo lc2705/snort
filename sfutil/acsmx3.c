@@ -388,14 +388,12 @@ _multiThread(void * args)
 		pthread_mutex_lock(mutex);
 		while(!search_added_array[rank] && !StopSearch) 
 		{
-            printf("rank %d !search added \n",rank);
        /*     if(StopSearch)
             {
                 pthread_mutex_unlock(mutex);
                 return NULL;
             }
             */
-            printf("rank %d cond wait \n",rank);
 			pthread_cond_wait(cond,mutex);
 		}
         if(!search_added_array[rank] && StopSearch)
@@ -432,7 +430,7 @@ _multiThread(void * args)
 			pthread_cond_signal(&packet_cond);
 		}	
 	}
-//	return NULL;
+	return NULL;
 }
 
 /*
